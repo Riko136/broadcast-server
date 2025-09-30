@@ -10,16 +10,21 @@
 #include <poll.h>
 #include <errno.h>
 
+#define BUF_SIZE 100
+#define PORT 8080
+
 
 int main(int argc, char *argv[])
 {
+	int status, socketfd, new_socketfd, fd_count, fd_size;
 	struct addrinfo hints, *res, *p;
-	struct sockaddr_in their_addr, *ipv4;
-	struct pollfd *pfds = malloc(sizeof *pfds * 5);
+	struct sockaddr_in client_addr, *ipv4;
+	struct pollfd *pfds = malloc(sizeof *pfds * fd_size);
 	socklen_t addr_size;
-	int status, socketfd, new_socketfd, fd_count;
 	char ipstr[INET_ADDRSTRLEN];
+	char buf[BUF_SIZE];
 	void *addr;
+	ssize_t msg_size;
 
 
 	if (argc != 2) {
@@ -34,7 +39,7 @@ int main(int argc, char *argv[])
     hints.ai_flags = AI_PASSIVE;
     
 
-	if ((status = getaddrinfo(NULL, "8080", &hints, &res)) != 0) {
+	if ((status = getaddrinfo(NULL, PORT, &hints, &res)) != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
 		return 1;
 	}
@@ -91,38 +96,39 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "error polling: %s\n", strerror(errno));
 			exit(1);
 		}
+
 		
-		for(int i = 0; i <= fd_count; i++ ){
-			if(pfds[i].revents & POLLIN){
-				
+		for(int i = 0; i < fd_count; i++){
+			if(pfds[i].revents & (POLLIN | POLLHUP)){
+				if(pfds[i].fd == socketfd){                // new connection
+					addr_size = sizeof client_addr;
+					new_socketfd = accept(socketfd, (struct sockaddr *)&client_addr, &addr_size);
+					if(new_socketfd == -1){
+						fprintf(stderr, "error accepting: %s\n", strerror(errno));
+						continue;
+					}
+					if(fd_count >= fd_size){
+						fd_size *= 2;
+						realloc(pfds, sizeof *pfds * fd_size);
+					}
+					pfds[fd_count].fd = new_socketfd;
+					pfds[fd_count].events = POLLIN;
+					pfds[fd_count].revents = 0;
+					fd_count++;
+					addr = &(client_addr.sin_addr);
+					inet_ntop(client_addr.sin_family, addr, ipstr, sizeof ipstr);
+					printf("server: got connection from %s\n", ipstr);
+				} else{
+					msg_size = recv(pfds[i].fd, &buf, sizeof buf, 0);
+				}
+
 			}
 		}
 		
-		
-
-		
-
-
-
-
-
-
-
-		addr_size = sizeof their_addr;
-		new_socketfd = accept(socketfd, (struct sockaddr *)&their_addr, &addr_size);
-
-		if(new_socketfd == -1){
-			fprintf(stderr, "error accepting: %s\n", strerror(errno));
-			continue;
-		}
-
-		
-		addr = &(their_addr.sin_addr);
-		inet_ntop(their_addr.sin_family, addr, ipstr, sizeof ipstr);
-		printf("server: got connection from %s\n", ipstr);
 
 
 	}
+	free(pfds);
 	
 	
 
