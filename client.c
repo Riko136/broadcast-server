@@ -1,19 +1,36 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <errno.h>
+#include <sys/wait.h>
+#include <signal.h>
+#define PORT 8080
+
+void sigchld_handler(int s)
+{
+	(void)s; // quiet unused variable warning
+
+	// waitpid() might overwrite errno, so we save and restore it:
+	int saved_errno = errno;
+
+	while(waitpid(-1, NULL, WNOHANG) > 0);
+
+	errno = saved_errno;
+}
 
 int main(int argc, char *argv[])
 {
 	struct addrinfo hints, *res, *p;
 	int status, socketfd;
-	char ipstr[INET6_ADDRSTRLEN];
+	char ipstr[INET_ADDRSTRLEN];
+	struct sigaction sa;
+
 
 	if (argc != 2) {
 	    fprintf(stderr,"usage: client hostname\n");
@@ -26,39 +43,56 @@ int main(int argc, char *argv[])
 	hints.ai_socktype = SOCK_STREAM;
     
 
-	if ((status = getaddrinfo(argv[1], "8080", &hints, &res)) != 0) {
+	if ((status = getaddrinfo(argv[1], PORT, &hints, &res)) != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
 		return 2;
 	}
 
 	for(p = res;p != NULL; p = p->ai_next) {
 		void *addr;
-        struct sockaddr_in *ipv4;
-	
+		struct sockaddr_in *ipv4;
+
+	    socketfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+		if(socketfd == -1){
+			fprintf(stderr, "error invoking the file descriptor: %s\n", strerror(errno));
+			continue;;
+		}
+
+		status = connect(socketfd, p->ai_addr, p->ai_addrlen);
+		if(status == -1){
+			fprintf(stderr, "error connecting: %s\n", strerror(errno));
+			close(socketfd);
+			continue;
+		}
+
 		ipv4 = (struct sockaddr_in *)p->ai_addr;
 		addr = &(ipv4->sin_addr);
-
-		// convert the IP to a string and print it:
 		inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
-		if(ipstr != argv[1]){
-			fprintf(stderr, "invalid ip adress: %s\n", ipstr);
-			return 2;
+		printf("client connecting to the server: %s", ipstr);
+	}
+
+
+
+	if(p == NULL){
+		fprintf(stderr, "error connecting to the server: address unkown");
+		exit(1);
+	}
+	freeaddrinfo(res); // free the linked list
+
+	sa.sa_handler = sigchld_handler; // reap all dead processes
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESTART;
+	if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+		perror("sigaction");
+		exit(1);
+	}
+	while(1){
+		if(!fork()){
+			
 		}
 	}
 
-    socketfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-	if(socketfd < 0){
-		fprintf(stderr, "error invoking the file descriptor: %s\n", strerror(errno));
-		return 2;
-	}
 
-	status = connect(socketfd, res->ai_addr, res->ai_addrlen);
-	if(status < 0){
-		fprintf(stderr, "error connecting: %s\n", strerror(errno));
-		return 2;
-	}
-
-	freeaddrinfo(res); // free the linked list
 
 	return 0;
 }

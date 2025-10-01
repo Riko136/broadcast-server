@@ -10,21 +10,76 @@
 #include <poll.h>
 #include <errno.h>
 
-#define BUF_SIZE 100
+#define BUF_SIZE 256
 #define PORT 8080
+void handle_client_data(struct pollfd *pfds, int fd_count, int *i){
+ssize_t recv_size, send_size;
+char buf[BUF_SIZE];
 
+recv_size = recv(pfds[*i].fd, &buf, sizeof buf, 0);
+if(recv_size <= 0){
+	if(recv_size == 0){
+		printf("pollserver: socket %d hung up\n", pfds[*i].fd);
+	} else{
+		fprintf(stderr, "error recieving the message: %s", strerror(errno));
+	}
 
+	close(pfds[*i].fd);
+	for(int j = *i; j < fd_count; j++){
+		pfds[j] = pfds[j+1];
+	}
+	(*i)--;
+
+} else{
+	for (int j = 1; j < fd_count; j++)
+	{
+		if(pfds[j].fd != pfds[*i].fd)
+		{
+			send_size = send(pfds[j].fd, &buf, sizeof buf, 0);
+			if(send_size == -1){
+				fprintf(stderr, "error sending the message: %s", strerror(errno));
+			}else if (send_size < recv_size)
+			{
+				/* send the rest of the message */
+			}
+		}
+	}
+}
+}
+
+void handle_new_connection(int socketfd, struct pollfd **pfds, int *fd_count, int *fd_size){
+	int new_socketfd;
+	socklen_t addr_size;
+	struct sockaddr_in client_addr;
+	void *addr;
+	char ipstr[INET_ADDRSTRLEN];
+
+	addr_size = sizeof client_addr;
+	new_socketfd = accept(socketfd, (struct sockaddr *)&client_addr, &addr_size);
+	if(new_socketfd == -1){
+		fprintf(stderr, "error accepting: %s\n", strerror(errno));
+	}else{
+		if((*fd_count) >= (*fd_size)){
+			*fd_size *= 2;
+			*pfds = realloc(*pfds, sizeof (**pfds) * (*fd_size));
+		}
+		(*pfds)[*fd_count].fd = new_socketfd;
+		(*pfds)[*fd_count].events = POLLIN;
+		(*pfds)[*fd_count].revents = 0;
+		(*fd_count)++;
+		addr = &(client_addr.sin_addr);
+		inet_ntop(client_addr.sin_family, addr, ipstr, sizeof ipstr);
+		printf("server: got connection from %s\n", ipstr);
+	}
+
+}
 int main(int argc, char *argv[])
 {
-	int status, socketfd, new_socketfd, fd_count, fd_size;
+	int status, socketfd, fd_count, fd_size;
 	struct addrinfo hints, *res, *p;
-	struct sockaddr_in client_addr, *ipv4;
+	struct sockaddr_in *ipv4;
 	struct pollfd *pfds = malloc(sizeof *pfds * fd_size);
-	socklen_t addr_size;
-	char ipstr[INET_ADDRSTRLEN];
-	char buf[BUF_SIZE];
-	void *addr;
-	ssize_t msg_size;
+
 
 
 	if (argc != 2) {
@@ -100,37 +155,14 @@ int main(int argc, char *argv[])
 		
 		for(int i = 0; i < fd_count; i++){
 			if(pfds[i].revents & (POLLIN | POLLHUP)){
-				if(pfds[i].fd == socketfd){                // new connection
-					addr_size = sizeof client_addr;
-					new_socketfd = accept(socketfd, (struct sockaddr *)&client_addr, &addr_size);
-					if(new_socketfd == -1){
-						fprintf(stderr, "error accepting: %s\n", strerror(errno));
-						continue;
-					}
-					if(fd_count >= fd_size){
-						fd_size *= 2;
-						realloc(pfds, sizeof *pfds * fd_size);
-					}
-					pfds[fd_count].fd = new_socketfd;
-					pfds[fd_count].events = POLLIN;
-					pfds[fd_count].revents = 0;
-					fd_count++;
-					addr = &(client_addr.sin_addr);
-					inet_ntop(client_addr.sin_family, addr, ipstr, sizeof ipstr);
-					printf("server: got connection from %s\n", ipstr);
-				} else{
-					msg_size = recv(pfds[i].fd, &buf, sizeof buf, 0);
+				if(pfds[i].fd == socketfd){                
+					handle_new_connection(socketfd, &pfds, &fd_count, &fd_size);
+				} else{	
+					handle_client_data(pfds, &fd_count, &i);
 				}
 
 			}
 		}
-		
-
-
 	}
 	free(pfds);
-	
-	
-
-	return 0;
 }
