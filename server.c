@@ -11,7 +11,7 @@
 #include <errno.h>
 
 #define BUF_SIZE 256
-#define PORT 8080
+#define PORT "8080"
 void handle_client_data(struct pollfd *pfds, int fd_count, int *i){
 ssize_t recv_size, send_size;
 char buf[BUF_SIZE];
@@ -76,6 +76,7 @@ void handle_new_connection(int socketfd, struct pollfd **pfds, int *fd_count, in
 int main(int argc, char *argv[])
 {
 	int status, socketfd, fd_count, fd_size;
+	int yes = 1;
 	struct addrinfo hints, *res, *p;
 	struct sockaddr_in *ipv4;
 	struct pollfd *pfds = malloc(sizeof *pfds * fd_size);
@@ -109,7 +110,7 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		if (setsockopt(socketfd, SOL_SOCKET, SO_REUSEADDR, 1, sizeof(int)) == -1) {
+		if (setsockopt(socketfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
 			fprintf(stderr, "error reusing the socket: %s\n", strerror(errno));
 			exit(1);
 		}
@@ -158,7 +159,7 @@ int main(int argc, char *argv[])
 				if(pfds[i].fd == socketfd){                
 					handle_new_connection(socketfd, &pfds, &fd_count, &fd_size);
 				} else{	
-					handle_client_data(pfds, &fd_count, &i);
+					handle_client_data(pfds, fd_count, &i);
 				}
 
 			}

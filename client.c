@@ -10,7 +10,8 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
-#define PORT 8080
+#define PORT "8080"
+#define BUF_SIZE 256
 
 void sigchld_handler(int s)
 {
@@ -28,8 +29,9 @@ int main(int argc, char *argv[])
 {
 	struct addrinfo hints, *res, *p;
 	int status, socketfd;
-	char ipstr[INET_ADDRSTRLEN];
+	char ipstr[INET_ADDRSTRLEN], buf[BUF_SIZE], buf_recv[BUF_SIZE];
 	struct sigaction sa;
+	pid_t pid;
 
 
 	if (argc != 2) {
@@ -55,11 +57,11 @@ int main(int argc, char *argv[])
 	    socketfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
 		if(socketfd == -1){
 			fprintf(stderr, "error invoking the file descriptor: %s\n", strerror(errno));
-			continue;;
+			continue;
 		}
 
-		status = connect(socketfd, p->ai_addr, p->ai_addrlen);
-		if(status == -1){
+		
+		if(connect(socketfd, p->ai_addr, p->ai_addrlen) == -1){
 			fprintf(stderr, "error connecting: %s\n", strerror(errno));
 			close(socketfd);
 			continue;
@@ -69,12 +71,13 @@ int main(int argc, char *argv[])
 		addr = &(ipv4->sin_addr);
 		inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
 		printf("client connecting to the server: %s", ipstr);
+		break;
 	}
 
 
 
 	if(p == NULL){
-		fprintf(stderr, "error connecting to the server: address unkown");
+		fprintf(stderr, "error connecting to the server: address unkown\n");
 		exit(1);
 	}
 	freeaddrinfo(res); // free the linked list
@@ -86,13 +89,30 @@ int main(int argc, char *argv[])
 		perror("sigaction");
 		exit(1);
 	}
-	while(1){
-		if(!fork()){
-			
-		}
+	
+	pid = fork();
+	switch(pid){
+		case -1:
+			fprintf(stderr, "fork error");
+			exit(1);
+		case 0:
+			while(fgets(buf, BUF_SIZE, stdin) != NULL){
+				if(send(socketfd, buf, sizeof buf, 0) == -1){
+					fprintf(stderr, "error sending the message: %s\n", strerror(errno));
+					exit(1);
+				}
+			}
+			puts("fgets while loop terminated");
+			exit(0);
+		default:
+			while(recv(socketfd, buf_recv, sizeof buf_recv, 0) > 0){
+				puts(buf_recv);
+			}
+			fprintf(stderr, "error recieving the message: server either terminated or something went wrong\n");
+			exit(1);
 	}
 
 
 
-	return 0;
+
 }
