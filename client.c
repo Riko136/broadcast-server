@@ -70,7 +70,7 @@ int main(int argc, char *argv[])
 		ipv4 = (struct sockaddr_in *)p->ai_addr;
 		addr = &(ipv4->sin_addr);
 		inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
-		printf("client connecting to the server: %s", ipstr);
+		printf("client connecting to the server: %s\n", ipstr);
 		break;
 	}
 
