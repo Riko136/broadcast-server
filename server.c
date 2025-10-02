@@ -12,7 +12,7 @@
 
 #define BUF_SIZE 256
 #define PORT "8080"
-void handle_client_data(struct pollfd *pfds, int fd_count, int *i){
+void handle_client_data(struct pollfd *pfds, int *fd_count, int *i){
 ssize_t recv_size, send_size;
 char buf[BUF_SIZE];
 
@@ -21,17 +21,20 @@ if(recv_size <= 0){
 	if(recv_size == 0){
 		printf("pollserver: socket %d hung up\n", pfds[*i].fd);
 	} else{
-		fprintf(stderr, "error recieving the message: %s", strerror(errno));
+		fprintf(stderr, "error recieving the message: %s\n", strerror(errno));
 	}
 
 	close(pfds[*i].fd);
-	for(int j = *i; j < fd_count; j++){
-		pfds[j] = pfds[j+1];
+	pfds[*i] = pfds[(*fd_count) - 1];
+	pfds[(*fd_count)-1].fd = -1;
+	(*i)--; 
+	(*fd_count)--;
+	for(int j = 0; j<*fd_count; j++){
+		printf("%i\n", pfds[j].fd);
 	}
-	(*i)--;
 
 } else{
-	for (int j = 1; j < fd_count; j++)
+	for (int j = 1; j < *fd_count; j++)
 	{
 		if(pfds[j].fd != pfds[*i].fd)
 		{
@@ -159,7 +162,7 @@ int main(int argc, char *argv[])
 				if(pfds[i].fd == socketfd){                
 					handle_new_connection(socketfd, &pfds, &fd_count, &fd_size);
 				} else{	
-					handle_client_data(pfds, fd_count, &i);
+					handle_client_data(pfds, &fd_count, &i);
 				}
 
 			}
